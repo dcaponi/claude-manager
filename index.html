@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Manager</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      :root {
+        --bg-primary: #0f1117;
+        --bg-secondary: #1a1d27;
+        --bg-tertiary: #242736;
+        --bg-hover: #2d3142;
+        --border: #333750;
+        --text-primary: #e8eaf0;
+        --text-secondary: #9ba1b5;
+        --text-muted: #6b7185;
+        --accent: #7c6ef0;
+        --accent-hover: #6a5cd8;
+        --accent-light: rgba(124,110,240,0.15);
+        --danger: #e5534b;
+        --danger-hover: #d04040;
+        --success: #57ab5a;
+        --warning: #c69026;
+        --tag-blue: #388bfd22;
+        --tag-blue-text: #6cb6ff;
+        --tag-green: #2ea04322;
+        --tag-green-text: #7ee787;
+        --tag-orange: #c6902622;
+        --tag-orange-text: #e3b341;
+        --radius: 8px;
+        --radius-lg: 12px;
+      }
+      html, body, #root { height: 100%; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        -webkit-app-region: drag;
+        overflow: hidden;
+      }
+      input, textarea, select, button { -webkit-app-region: no-drag; }
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

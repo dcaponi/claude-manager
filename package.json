@@ -1,0 +1,82 @@
+{
+  "name": "claude-manager",
+  "version": "1.0.0",
+  "description": "Claude Code Skills, Plugins, Agents & Teams Manager",
+  "main": "main.js",
+  "scripts": {
+    "dev:renderer": "vite",
+    "dev:electron": "wait-on http://localhost:5173 && electron .",
+    "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "build": "vite build && electron-builder --publish never",
+    "build:mac": "vite build && electron-builder --mac --publish never",
+    "build:win": "vite build && electron-builder --win --publish never",
+    "build:all": "vite build && electron-builder --mac --win --publish never",
+    "release": "vite build && electron-builder --publish always"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "build": {
+    "appId": "com.claude-manager.app",
+    "productName": "Claude Manager",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["universal"]
+        },
+        {
+          "target": "zip",
+          "arch": ["universal"]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "dcaponi",
+      "repo": "claude-manager"
+    }
+  },
+  "dependencies": {
+    "electron": "^41.1.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "electron-builder": "^26.8.1",
+    "vite": "^8.0.3",
+    "wait-on": "^9.0.4"
+  }
+}

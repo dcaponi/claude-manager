@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar.jsx';
 import SkillsView from './views/SkillsView.jsx';
 import AgentsView from './views/AgentsView.jsx';
+import McpView from './views/McpView.jsx';
 import PluginsView from './views/PluginsView.jsx';
 import TeamsView from './views/TeamsView.jsx';
 import SettingsView from './views/SettingsView.jsx';
@@ -56,6 +57,7 @@ export default function App() {
   const viewTitles = {
     skills: 'Skills',
     agents: 'Agents',
+    mcp: 'MCP Servers',
     plugins: 'Plugins',
     teams: 'Agent Teams',
     settings: 'Settings',
@@ -81,6 +83,9 @@ export default function App() {
           )}
           {view === 'agents' && (
             <AgentsView scope={scope} projectPath={projectPath} refreshKey={refreshKey} onRefresh={refresh} />
+          )}
+          {view === 'mcp' && (
+            <McpView scope={scope} projectPath={projectPath} refreshKey={refreshKey} onRefresh={refresh} />
           )}
           {view === 'plugins' && (
             <PluginsView projectPath={projectPath} refreshKey={refreshKey} />

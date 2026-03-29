@@ -106,6 +106,7 @@ const styles = {
 const NAV = [
   { id: 'skills', label: 'Skills', icon: '⚡' },
   { id: 'agents', label: 'Agents', icon: '🤖' },
+  { id: 'mcp', label: 'MCP Servers', icon: '🔌' },
   { id: 'plugins', label: 'Plugins', icon: '🧩' },
   { id: 'teams', label: 'Agent Teams', icon: '👥' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },

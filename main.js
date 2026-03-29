@@ -232,6 +232,72 @@ function listPlugins(projectPath) {
   return results;
 }
 
+// ── MCP Servers ──
+
+function getMcpPath(scope, projectPath) {
+  if (scope === 'global') return path.join(GLOBAL_CLAUDE_DIR, '.mcp.json');
+  return path.join(projectPath, '.mcp.json');
+}
+
+function readMcpConfig(scope, projectPath) {
+  const filePath = getMcpPath(scope, projectPath);
+  if (!fs.existsSync(filePath)) return { mcpServers: {} };
+  try {
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    return data.mcpServers ? data : { mcpServers: data };
+  } catch (e) {
+    return { mcpServers: {} };
+  }
+}
+
+function writeMcpConfig(scope, projectPath, config) {
+  const filePath = getMcpPath(scope, projectPath);
+  ensureDir(path.dirname(filePath));
+  fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf-8');
+}
+
+function listMcpServers(scope, projectPath) {
+  const config = readMcpConfig(scope, projectPath);
+  const servers = config.mcpServers || {};
+  return Object.entries(servers).map(([id, cfg]) => ({
+    id,
+    command: cfg.command || '',
+    args: cfg.args || [],
+    env: cfg.env || {},
+    url: cfg.url || '',
+    type: cfg.url ? 'sse' : 'stdio',
+    scope,
+    filePath: getMcpPath(scope, projectPath),
+  }));
+}
+
+function saveMcpServer(scope, projectPath, id, serverConfig) {
+  const config = readMcpConfig(scope, projectPath);
+  if (!config.mcpServers) config.mcpServers = {};
+  const entry = {};
+  if (serverConfig.type === 'sse' && serverConfig.url) {
+    entry.url = serverConfig.url;
+  } else {
+    entry.command = serverConfig.command;
+    entry.args = serverConfig.args || [];
+  }
+  if (serverConfig.env && Object.keys(serverConfig.env).length > 0) {
+    entry.env = serverConfig.env;
+  }
+  config.mcpServers[id] = entry;
+  writeMcpConfig(scope, projectPath, config);
+  return { id, ...entry, scope };
+}
+
+function deleteMcpServer(scope, projectPath, id) {
+  const config = readMcpConfig(scope, projectPath);
+  if (config.mcpServers) {
+    delete config.mcpServers[id];
+  }
+  writeMcpConfig(scope, projectPath, config);
+  return true;
+}
+
 // ── Agent Teams (settings) ──
 
 function getSettings(projectPath) {
@@ -294,6 +360,11 @@ function registerIPC() {
 
   // Plugins
   ipcMain.handle('plugins:list', (_, projectPath) => listPlugins(projectPath));
+
+  // MCP Servers
+  ipcMain.handle('mcp:list', (_, scope, projectPath) => listMcpServers(scope, projectPath));
+  ipcMain.handle('mcp:save', (_, scope, projectPath, id, config) => saveMcpServer(scope, projectPath, id, config));
+  ipcMain.handle('mcp:delete', (_, scope, projectPath, id) => deleteMcpServer(scope, projectPath, id));
 
   // Settings / Agent Teams
   ipcMain.handle('settings:get', (_, projectPath) => getSettings(projectPath));

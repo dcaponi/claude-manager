@@ -20,6 +20,11 @@ contextBridge.exposeInMainWorld('api', {
   getSettings: (projectPath) => ipcRenderer.invoke('settings:get', projectPath),
   saveSettings: (scope, projectPath, settings) => ipcRenderer.invoke('settings:save', scope, projectPath, settings),
 
+  // MCP Servers
+  listMcp: (scope, projectPath) => ipcRenderer.invoke('mcp:list', scope, projectPath),
+  saveMcp: (scope, projectPath, id, config) => ipcRenderer.invoke('mcp:save', scope, projectPath, id, config),
+  deleteMcp: (scope, projectPath, id) => ipcRenderer.invoke('mcp:delete', scope, projectPath, id),
+
   // Chat
   chatSend: (message, projectPath) => ipcRenderer.invoke('chat:send', message, projectPath),
 

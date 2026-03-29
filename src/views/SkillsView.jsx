@@ -31,6 +31,13 @@ const SKILL_FIELDS = [
     hint: 'Optionally delegate this skill to a specific agent type',
   },
   {
+    key: 'mcp-servers',
+    label: 'MCP Servers',
+    type: 'text',
+    placeholder: 'censys, github, filesystem',
+    hint: 'Comma-separated MCP server names this skill depends on. Configure servers in the MCP Servers view.',
+  },
+  {
     key: 'memory',
     label: 'Memory Scope',
     type: 'select',

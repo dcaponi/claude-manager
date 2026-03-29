@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: npm ci
       - run: npm run build:mac
         env:
@@ -23,7 +23,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: mac-release
-          path: release/*.{dmg,zip}
+          path: |
+            release/**/*.dmg
+            release/**/*.zip
 
   build-win:
     runs-on: windows-latest
@@ -31,7 +33,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: npm ci
       - run: npm run build:win
         env:
@@ -39,7 +41,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: win-release
-          path: release/*.{exe,zip}
+          path: |
+            release/**/*.exe
+            release/**/*.zip
 
   publish:
     needs: [build-mac, build-win]
@@ -51,8 +55,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/mac-release/*
-            artifacts/win-release/*
+            artifacts/**/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 
 const os = require('os');
 const GLOBAL_CLAUDE_DIR = path.join(os.homedir(), '.claude');
@@ -380,6 +380,331 @@ function listAllMcpServers(projectPath) {
   }
 
   return results;
+}
+
+// ── Marketplace Management ──
+
+function listMarketplaces() {
+  const appConfig = getAppConfig();
+  const ownedSet = new Set(appConfig.ownedMarketplaces || []);
+  const knownMarketplaces = readKnownMarketplaces();
+
+  return Object.entries(knownMarketplaces).map(([name, info]) => {
+    const catalog = readMarketplaceCatalog(info.installLocation);
+    return {
+      id: name,
+      name,
+      owner: info.owner || null,
+      source: info.source || null,
+      installLocation: info.installLocation || null,
+      lastUpdated: info.lastUpdated || null,
+      pluginCount: catalog && Array.isArray(catalog.plugins) ? catalog.plugins.length : 0,
+      owned: ownedSet.has(name),
+    };
+  });
+}
+
+function setMarketplaceOwned(name, owned) {
+  const config = getAppConfig();
+  const owned_list = config.ownedMarketplaces || [];
+  if (owned) {
+    if (!owned_list.includes(name)) owned_list.push(name);
+  } else {
+    const idx = owned_list.indexOf(name);
+    if (idx > -1) owned_list.splice(idx, 1);
+  }
+  config.ownedMarketplaces = owned_list;
+  saveAppConfig(config);
+  return true;
+}
+
+function updateMarketplace(name) {
+  return new Promise((resolve, reject) => {
+    const knownMarketplaces = readKnownMarketplaces();
+    const info = knownMarketplaces[name];
+    if (!info || !info.installLocation) {
+      return reject(new Error(`Marketplace "${name}" not found or has no install location`));
+    }
+    const proc = spawn('git', ['pull'], {
+      cwd: info.installLocation,
+      env: { ...process.env },
+    });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', d => { stdout += d.toString(); });
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('close', code => {
+      if (code === 0) resolve({ ok: true, output: stdout.trim() });
+      else reject(new Error(stderr.trim() || `git pull exited with code ${code}`));
+    });
+    proc.on('error', reject);
+  });
+}
+
+function removeMarketplace(name) {
+  const knownPath = KNOWN_MARKETPLACES_PATH;
+  const knownMarketplaces = readKnownMarketplaces();
+  delete knownMarketplaces[name];
+  ensureDir(path.dirname(knownPath));
+  fs.writeFileSync(knownPath, JSON.stringify(knownMarketplaces, null, 2), 'utf-8');
+
+  // Remove from ownedMarketplaces in app config
+  const config = getAppConfig();
+  if (config.ownedMarketplaces) {
+    const idx = config.ownedMarketplaces.indexOf(name);
+    if (idx > -1) {
+      config.ownedMarketplaces.splice(idx, 1);
+      saveAppConfig(config);
+    }
+  }
+  return true;
+}
+
+// ── Plugin Lifecycle ──
+
+function enablePlugin(pluginKey) {
+  ensureDir(path.dirname(GLOBAL_SETTINGS_PATH));
+  let settings = {};
+  if (fs.existsSync(GLOBAL_SETTINGS_PATH)) {
+    try { settings = JSON.parse(fs.readFileSync(GLOBAL_SETTINGS_PATH, 'utf-8')); } catch (e) {}
+  }
+  if (!settings.enabledPlugins) settings.enabledPlugins = {};
+  settings.enabledPlugins[pluginKey] = true;
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+  return true;
+}
+
+function disablePlugin(pluginKey) {
+  ensureDir(path.dirname(GLOBAL_SETTINGS_PATH));
+  let settings = {};
+  if (fs.existsSync(GLOBAL_SETTINGS_PATH)) {
+    try { settings = JSON.parse(fs.readFileSync(GLOBAL_SETTINGS_PATH, 'utf-8')); } catch (e) {}
+  }
+  if (!settings.enabledPlugins) settings.enabledPlugins = {};
+  settings.enabledPlugins[pluginKey] = false;
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+  return true;
+}
+
+function uninstallPlugin(pluginKey) {
+  // Remove from installed_plugins.json and delete cache dirs
+  let installedData = {};
+  if (fs.existsSync(INSTALLED_PLUGINS_PATH)) {
+    try { installedData = JSON.parse(fs.readFileSync(INSTALLED_PLUGINS_PATH, 'utf-8')); } catch (e) {}
+  }
+  const plugins = installedData.plugins || {};
+  const installations = plugins[pluginKey];
+  if (installations) {
+    const installList = Array.isArray(installations) ? installations : [installations];
+    for (const install of installList) {
+      if (install.installPath && fs.existsSync(install.installPath)) {
+        try { fs.rmSync(install.installPath, { recursive: true }); } catch (e) {}
+      }
+    }
+    delete plugins[pluginKey];
+    installedData.plugins = plugins;
+    ensureDir(path.dirname(INSTALLED_PLUGINS_PATH));
+    fs.writeFileSync(INSTALLED_PLUGINS_PATH, JSON.stringify(installedData, null, 2), 'utf-8');
+  }
+
+  // Remove from enabledPlugins in settings.json
+  if (fs.existsSync(GLOBAL_SETTINGS_PATH)) {
+    try {
+      const settings = JSON.parse(fs.readFileSync(GLOBAL_SETTINGS_PATH, 'utf-8'));
+      if (settings.enabledPlugins && settings.enabledPlugins[pluginKey] !== undefined) {
+        delete settings.enabledPlugins[pluginKey];
+        fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+      }
+    } catch (e) {}
+  }
+
+  return true;
+}
+
+// ── Package & Publish ──
+
+function scaffoldPlugin(name, meta, selectedSkills, selectedAgents) {
+  const tmpBase = require('os').tmpdir();
+  const tempDir = path.join(tmpBase, `claude-plugin-${name}-${Date.now()}`);
+  ensureDir(tempDir);
+
+  // Write .claude-plugin/plugin.json
+  const pluginJsonDir = path.join(tempDir, '.claude-plugin');
+  ensureDir(pluginJsonDir);
+  const pluginJson = {
+    name,
+    version: meta.version || '1.0.0',
+    description: meta.description || '',
+    author: meta.author || '',
+    ...meta,
+  };
+  fs.writeFileSync(path.join(pluginJsonDir, 'plugin.json'), JSON.stringify(pluginJson, null, 2), 'utf-8');
+
+  // Copy skills into skills/<id>/SKILL.md
+  if (selectedSkills && selectedSkills.length > 0) {
+    for (const skill of selectedSkills) {
+      const skillDir = path.join(tempDir, 'skills', skill.id);
+      ensureDir(skillDir);
+      const { id, body, filePath, scope, ...skillMeta } = skill;
+      const content = buildFrontmatter(skillMeta, body || '');
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), content, 'utf-8');
+    }
+  }
+
+  // Copy agents into agents/<id>.md
+  if (selectedAgents && selectedAgents.length > 0) {
+    const agentsDir = path.join(tempDir, 'agents');
+    ensureDir(agentsDir);
+    for (const agent of selectedAgents) {
+      const { id, body, filePath, scope, ...agentMeta } = agent;
+      const content = buildFrontmatter(agentMeta, body || '');
+      fs.writeFileSync(path.join(agentsDir, `${id}.md`), content, 'utf-8');
+    }
+  }
+
+  return tempDir;
+}
+
+function addPluginToMarketplace(marketplaceName, pluginName, pluginTempDir) {
+  const knownMarketplaces = readKnownMarketplaces();
+  const info = knownMarketplaces[marketplaceName];
+  if (!info || !info.installLocation) {
+    throw new Error(`Marketplace "${marketplaceName}" not found or has no install location`);
+  }
+
+  const targetDir = path.join(info.installLocation, 'plugins', pluginName);
+  ensureDir(path.dirname(targetDir));
+
+  // Copy plugin temp dir to target
+  if (fs.existsSync(targetDir)) {
+    fs.rmSync(targetDir, { recursive: true });
+  }
+  fs.cpSync(pluginTempDir, targetDir, { recursive: true });
+
+  // Update marketplace.json with new plugin entry
+  const catalogPath = path.join(info.installLocation, '.claude-plugin', 'marketplace.json');
+  let catalog = { plugins: [] };
+  if (fs.existsSync(catalogPath)) {
+    try { catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf-8')); } catch (e) {}
+  }
+  if (!Array.isArray(catalog.plugins)) catalog.plugins = [];
+
+  // Read plugin.json from the copied directory to get metadata
+  let pluginMeta = {};
+  const pluginJsonPath = path.join(targetDir, '.claude-plugin', 'plugin.json');
+  if (fs.existsSync(pluginJsonPath)) {
+    try { pluginMeta = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf-8')); } catch (e) {}
+  }
+
+  // Upsert plugin entry
+  const existingIdx = catalog.plugins.findIndex(p => p.name === pluginName);
+  const entry = {
+    name: pluginName,
+    description: pluginMeta.description || '',
+    author: pluginMeta.author || '',
+    version: pluginMeta.version || '1.0.0',
+    source: `plugins/${pluginName}`,
+  };
+  if (existingIdx > -1) {
+    catalog.plugins[existingIdx] = entry;
+  } else {
+    catalog.plugins.push(entry);
+  }
+
+  ensureDir(path.dirname(catalogPath));
+  fs.writeFileSync(catalogPath, JSON.stringify(catalog, null, 2), 'utf-8');
+
+  // Clean up temp dir
+  try { fs.rmSync(pluginTempDir, { recursive: true }); } catch (e) {}
+
+  return targetDir;
+}
+
+function publishToMarketplace(marketplaceName, commitMessage) {
+  return new Promise((resolve, reject) => {
+    const knownMarketplaces = readKnownMarketplaces();
+    const info = knownMarketplaces[marketplaceName];
+    if (!info || !info.installLocation) {
+      return reject(new Error(`Marketplace "${marketplaceName}" not found or has no install location`));
+    }
+
+    const cwd = info.installLocation;
+    const msg = commitMessage || `Update marketplace plugins`;
+
+    const addProc = spawn('git', ['add', '-A'], { cwd, env: { ...process.env } });
+    let addErr = '';
+    addProc.stderr.on('data', d => { addErr += d.toString(); });
+    addProc.on('close', addCode => {
+      if (addCode !== 0) return reject(new Error(`git add failed: ${addErr.trim()}`));
+
+      const commitProc = spawn('git', ['commit', '-m', msg], { cwd, env: { ...process.env } });
+      let commitOut = '';
+      let commitErr = '';
+      commitProc.stdout.on('data', d => { commitOut += d.toString(); });
+      commitProc.stderr.on('data', d => { commitErr += d.toString(); });
+      commitProc.on('close', commitCode => {
+        // exit code 1 from commit can mean "nothing to commit" — treat as non-fatal
+        if (commitCode !== 0 && !commitOut.includes('nothing to commit') && !commitErr.includes('nothing to commit')) {
+          return reject(new Error(`git commit failed: ${commitErr.trim()}`));
+        }
+
+        const pushProc = spawn('git', ['push'], { cwd, env: { ...process.env } });
+        let pushErr = '';
+        let pushOut = '';
+        pushProc.stdout.on('data', d => { pushOut += d.toString(); });
+        pushProc.stderr.on('data', d => { pushErr += d.toString(); });
+        pushProc.on('close', pushCode => {
+          if (pushCode === 0) resolve({ ok: true, output: pushOut.trim() });
+          else reject(new Error(`git push failed: ${pushErr.trim()}`));
+        });
+        pushProc.on('error', reject);
+      });
+      commitProc.on('error', reject);
+    });
+    addProc.on('error', reject);
+  });
+}
+
+function createMarketplace(name, githubRepo) {
+  const marketplaceDir = path.join(MARKETPLACES_DIR, name);
+  ensureDir(marketplaceDir);
+
+  // Scaffold .claude-plugin/marketplace.json
+  const metaDir = path.join(marketplaceDir, '.claude-plugin');
+  ensureDir(metaDir);
+  const marketplaceJson = {
+    name,
+    description: '',
+    owner: '',
+    plugins: [],
+  };
+  fs.writeFileSync(
+    path.join(metaDir, 'marketplace.json'),
+    JSON.stringify(marketplaceJson, null, 2),
+    'utf-8'
+  );
+
+  // git init and optionally add remote
+  execSync('git init', { cwd: marketplaceDir });
+  if (githubRepo) {
+    execSync(`git remote add origin ${githubRepo}`, { cwd: marketplaceDir });
+  }
+
+  // Register in known_marketplaces.json
+  const knownMarketplaces = readKnownMarketplaces();
+  knownMarketplaces[name] = {
+    source: githubRepo || null,
+    installLocation: marketplaceDir,
+    lastUpdated: new Date().toISOString(),
+    owner: '',
+  };
+  ensureDir(path.dirname(KNOWN_MARKETPLACES_PATH));
+  fs.writeFileSync(KNOWN_MARKETPLACES_PATH, JSON.stringify(knownMarketplaces, null, 2), 'utf-8');
+
+  // Mark as owned
+  setMarketplaceOwned(name, true);
+
+  return marketplaceDir;
 }
 
 // ── Skills ──

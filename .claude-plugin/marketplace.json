@@ -1,0 +1,12 @@
+{
+  "name": "claude-manager-marketplace",
+  "description": "Marketplace for Claude Manager — a desktop UI for managing Claude Code skills, agents, plugins, and agent teams",
+  "plugins": [
+    {
+      "name": "claude-manager",
+      "description": "Install and launch Claude Manager — a desktop UI for managing skills, agents, plugins, and agent teams",
+      "source": ".",
+      "tags": ["desktop", "ui", "skills", "agents", "plugins", "teams", "manager"]
+    }
+  ]
+}

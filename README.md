@@ -85,6 +85,19 @@ Install and launch directly from Claude Code:
 ```
 The skill auto-detects your platform, downloads the binary, and launches the app.
 
+### From the Claude Code Plugin Marketplace
+Add the marketplace and install in one go:
+```bash
+/plugin marketplace add dcaponi/claude-manager
+/plugin install claude-manager@claude-manager-marketplace
+/reload-plugins
+```
+
+Then launch with:
+```
+/claude-manager:claude-manager
+```
+
 ### From Source
 ```bash
 git clone https://github.com/dcaponi/claude-manager.git claude-manager
@@ -131,3 +144,37 @@ npm run dev
 # Production build (creates platform-specific binaries)
 npm run build
 ```
+
+## Deploying to the Claude Code Plugin Marketplace
+
+Claude Manager is packaged as a Claude Code plugin and can be distributed via the plugin marketplace system.
+
+### How it works
+
+The plugin manifest lives in `.claude-plugin/plugin.json` and the marketplace catalog in `.claude-plugin/marketplace.json`. When you push to GitHub, users can add your repo as a marketplace source and install the plugin directly.
+
+### Validating the plugin
+
+Before publishing, validate the plugin config:
+```bash
+/plugin validate
+```
+
+### Publishing a new version
+
+1. Update the version in `.claude-plugin/plugin.json`
+2. Commit and push to GitHub
+3. (Optional) Create a GitHub release with pre-built binaries
+
+That's it — users who have added your marketplace will pick up the update automatically, or can run:
+```bash
+/plugin marketplace update claude-manager-marketplace
+```
+
+### Submitting to the official Anthropic marketplace
+
+To make the plugin discoverable without users needing to add your repo as a marketplace:
+
+1. Go to [claude.ai/settings/plugins/submit](https://claude.ai/settings/plugins/submit) or [platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit)
+2. Submit your GitHub repo URL: `https://github.com/dcaponi/claude-manager`
+3. Once approved, users can install directly via `/plugin` in the Discover tab

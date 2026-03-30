@@ -11,7 +11,8 @@
     "build:mac": "vite build && electron-builder --mac --publish never",
     "build:win": "vite build && electron-builder --win --publish never",
     "build:all": "vite build && electron-builder --mac --win --publish never",
-    "release": "vite build && electron-builder --publish always"
+    "release": "vite build && electron-builder --publish always",
+    "test:e2e": "npx vite build && npx playwright test"
   },
   "keywords": [],
   "author": "",
@@ -33,11 +34,15 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["universal"]
+          "arch": [
+            "universal"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["universal"]
+          "arch": [
+            "universal"
+          ]
         }
       ],
       "category": "public.app-category.developer-tools",
@@ -47,11 +52,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico"
@@ -72,10 +81,12 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^9.2.1",
     "electron": "^41.1.0",
     "electron-builder": "^26.8.1",
+    "playwright": "^1.58.2",
     "vite": "^8.0.3",
     "wait-on": "^9.0.4"
   }

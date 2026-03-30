@@ -299,13 +299,30 @@ function PluginCard({ plugin, projectPath, onRefresh }) {
   const [acting, setActing] = useState(false);
 
   const isInstalled = plugin.status === 'installed' || plugin.installed;
-  const isLocal = plugin.source === 'local' || plugin.isLocal;
+  const isLocal = plugin.source === 'local' || plugin.isLocal || plugin.status === 'local' || plugin.scope === 'local';
+
+  const mcpEntries = plugin.mcpServers
+    ? (Array.isArray(plugin.mcpServers)
+        ? plugin.mcpServers
+        : Object.entries(plugin.mcpServers).map(([id, cfg]) => ({ id, ...cfg })))
+    : [];
+
+  const hooksEntries = plugin.hooks
+    ? (Array.isArray(plugin.hooks)
+        ? plugin.hooks
+        : Object.entries(plugin.hooks).map(([event, cfg]) => {
+            if (Array.isArray(cfg)) {
+              return cfg.map(c => ({ event, ...(typeof c === 'object' ? c : { command: String(c) }) }));
+            }
+            return [{ event, ...(typeof cfg === 'object' ? cfg : { command: String(cfg) }) }];
+          }).flat())
+    : [];
 
   const counts = {
     skills: (plugin.skills || []).length,
     agents: (plugin.agents || []).length,
-    mcp: (plugin.mcpServers || []).length,
-    hooks: (plugin.hooks || []).length,
+    mcp: mcpEntries.length,
+    hooks: hooksEntries.length,
   };
 
   const handleEnable = async (e) => {
@@ -500,17 +517,17 @@ function PluginCard({ plugin, projectPath, onRefresh }) {
               )}
 
               {activeTab === 'mcp' && (
-                (plugin.mcpServers || []).length === 0 ? (
+                mcpEntries.length === 0 ? (
                   <div style={styles.emptyTab}>No MCP servers in this plugin</div>
                 ) : (
-                  (plugin.mcpServers || []).map((server, i) => (
+                  mcpEntries.map((server, i) => (
                     <div key={server.id || i} style={styles.itemRow}>
-                      <div style={styles.itemName}>🔌 {server.id || server.name}</div>
+                      <div style={styles.itemName}>🔌 {server.id || server.name || `Server ${i + 1}`}</div>
                       {server.command && (
                         <div style={styles.itemDesc}>{server.command} {(server.args || []).join(' ')}</div>
                       )}
                       {server.url && (
-                        <div style={styles.itemDesc}>{server.url}</div>
+                        <div style={styles.itemDesc}>{String(server.url)}</div>
                       )}
                     </div>
                   ))
@@ -518,13 +535,13 @@ function PluginCard({ plugin, projectPath, onRefresh }) {
               )}
 
               {activeTab === 'hooks' && (
-                (plugin.hooks || []).length === 0 ? (
+                hooksEntries.length === 0 ? (
                   <div style={styles.emptyTab}>No hooks in this plugin</div>
                 ) : (
-                  (plugin.hooks || []).map((hook, i) => (
+                  hooksEntries.map((hook, i) => (
                     <div key={i} style={styles.itemRow}>
-                      <div style={styles.itemName}>{hook.event || hook.type || 'Hook'}</div>
-                      {hook.command && <div style={styles.itemDesc}>{hook.command}</div>}
+                      <div style={styles.itemName}>{String(hook.event || hook.type || 'Hook')}</div>
+                      {hook.command && <div style={styles.itemDesc}>{String(hook.command)}</div>}
                     </div>
                   ))
                 )

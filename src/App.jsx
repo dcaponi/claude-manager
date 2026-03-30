@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar.jsx';
-import SkillsView from './views/SkillsView.jsx';
-import AgentsView from './views/AgentsView.jsx';
-import McpView from './views/McpView.jsx';
 import PluginsView from './views/PluginsView.jsx';
-import TeamsView from './views/TeamsView.jsx';
+import MarketplacesView from './views/MarketplacesView.jsx';
+import McpView from './views/McpView.jsx';
 import SettingsView from './views/SettingsView.jsx';
 import ChatBubble from './components/ChatBubble.jsx';
 
@@ -42,8 +40,7 @@ const styles = {
 };
 
 export default function App() {
-  const [view, setView] = useState('skills');
-  const [scope, setScope] = useState('global');
+  const [view, setView] = useState('plugins');
   const [projectPath, setProjectPath] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -55,11 +52,9 @@ export default function App() {
   };
 
   const viewTitles = {
-    skills: 'Skills',
-    agents: 'Agents',
-    mcp: 'MCP Servers',
     plugins: 'Plugins',
-    teams: 'Agent Teams',
+    marketplaces: 'Marketplaces',
+    mcp: 'MCP Servers',
     settings: 'Settings',
   };
 
@@ -68,37 +63,29 @@ export default function App() {
       <Sidebar
         view={view}
         setView={setView}
-        scope={scope}
-        setScope={setScope}
         projectPath={projectPath}
         onPickProject={handlePickProject}
       />
       <div style={styles.main}>
         <div style={styles.titleBar}>
-          Claude Manager — {viewTitles[view]} ({scope === 'global' ? 'Global' : projectPath || 'No Project'})
+          Claude Manager — {viewTitles[view]}
         </div>
         <div style={styles.content}>
-          {view === 'skills' && (
-            <SkillsView scope={scope} projectPath={projectPath} refreshKey={refreshKey} onRefresh={refresh} />
+          {view === 'plugins' && (
+            <PluginsView projectPath={projectPath} refreshKey={refreshKey} onRefresh={refresh} />
           )}
-          {view === 'agents' && (
-            <AgentsView scope={scope} projectPath={projectPath} refreshKey={refreshKey} onRefresh={refresh} />
+          {view === 'marketplaces' && (
+            <MarketplacesView refreshKey={refreshKey} onRefresh={refresh} />
           )}
           {view === 'mcp' && (
-            <McpView scope={scope} projectPath={projectPath} refreshKey={refreshKey} onRefresh={refresh} />
-          )}
-          {view === 'plugins' && (
-            <PluginsView projectPath={projectPath} refreshKey={refreshKey} />
-          )}
-          {view === 'teams' && (
-            <TeamsView scope={scope} projectPath={projectPath} refreshKey={refreshKey} onRefresh={refresh} />
+            <McpView projectPath={projectPath} refreshKey={refreshKey} onRefresh={refresh} />
           )}
           {view === 'settings' && (
             <SettingsView projectPath={projectPath} />
           )}
         </div>
       </div>
-      <ChatBubble scope={scope} projectPath={projectPath} onRefresh={refresh} currentView={view} />
+      <ChatBubble projectPath={projectPath} onRefresh={refresh} currentView={view} />
     </div>
   );
 }

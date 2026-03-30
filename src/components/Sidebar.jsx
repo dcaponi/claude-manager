@@ -104,15 +104,13 @@ const styles = {
 };
 
 const NAV = [
-  { id: 'skills', label: 'Skills', icon: '⚡' },
-  { id: 'agents', label: 'Agents', icon: '🤖' },
-  { id: 'mcp', label: 'MCP Servers', icon: '🔌' },
   { id: 'plugins', label: 'Plugins', icon: '🧩' },
-  { id: 'teams', label: 'Agent Teams', icon: '👥' },
+  { id: 'marketplaces', label: 'Marketplaces', icon: '🏪' },
+  { id: 'mcp', label: 'MCP Servers', icon: '🔌' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ];
 
-export default function Sidebar({ view, setView, scope, setScope, projectPath, onPickProject }) {
+export default function Sidebar({ view, setView, projectPath, onPickProject }) {
   return (
     <div style={styles.sidebar}>
       <div style={styles.logo}>
@@ -121,24 +119,14 @@ export default function Sidebar({ view, setView, scope, setScope, projectPath, o
       </div>
 
       <div style={styles.section}>
-        <div style={styles.sectionLabel}>Scope</div>
-        <div style={styles.scopeToggle}>
-          <button style={styles.scopeBtn(scope === 'global')} onClick={() => setScope('global')}>
-            Global
-          </button>
-          <button style={styles.scopeBtn(scope === 'project')} onClick={() => setScope('project')}>
-            Project
-          </button>
+        <div style={styles.sectionLabel}>Project</div>
+        <div style={styles.projectPath} onClick={onPickProject} title={projectPath || 'Click to select project'}>
+          📁 {projectPath ? projectPath.split('/').pop() : 'Select project...'}
         </div>
-        {scope === 'project' && (
-          <div style={styles.projectPath} onClick={onPickProject} title={projectPath || 'Click to select project'}>
-            📁 {projectPath ? projectPath.split('/').pop() : 'Select project...'}
-          </div>
-        )}
       </div>
 
       <div style={styles.section}>
-        <div style={styles.sectionLabel}>Components</div>
+        <div style={styles.sectionLabel}>Views</div>
         {NAV.map(item => (
           <button
             key={item.id}

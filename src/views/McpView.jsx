@@ -444,18 +444,18 @@ function McpEditorModal({ item, onSave, onClose }) {
   );
 }
 
-export default function McpView({ scope, projectPath, refreshKey, onRefresh }) {
+export default function McpView({ projectPath, refreshKey, onRefresh }) {
   const [servers, setServers] = useState([]);
   const [expanded, setExpanded] = useState({});
   const [editing, setEditing] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { loadServers(); }, [scope, projectPath, refreshKey]);
+  useEffect(() => { loadServers(); }, [projectPath, refreshKey]);
 
   const loadServers = async () => {
     setLoading(true);
     try {
-      const result = await window.api.listMcp(scope, projectPath);
+      const result = await window.api.listAllMcp(projectPath);
       setServers(result || []);
     } catch (e) {
       console.error('Failed to load MCP servers:', e);
@@ -465,6 +465,7 @@ export default function McpView({ scope, projectPath, refreshKey, onRefresh }) {
   };
 
   const handleSave = async (id, config) => {
+    const scope = editing?.item?.scope || 'global';
     await window.api.saveMcp(scope, projectPath, id, config);
     setEditing(null);
     loadServers();
@@ -473,6 +474,7 @@ export default function McpView({ scope, projectPath, refreshKey, onRefresh }) {
 
   const handleDelete = async (server) => {
     if (!confirm(`Remove MCP server "${server.id}"?`)) return;
+    const scope = server.scope || 'global';
     await window.api.deleteMcp(scope, projectPath, server.id);
     loadServers();
     onRefresh();
@@ -486,7 +488,7 @@ export default function McpView({ scope, projectPath, refreshKey, onRefresh }) {
         <div>
           <div style={styles.title}>MCP Servers</div>
           <div style={styles.subtitle}>
-            Model Context Protocol connections — {scope === 'global' ? '~/.claude/.mcp.json' : '.mcp.json'}
+            All Model Context Protocol connections — global, project, and plugin-bundled
           </div>
         </div>
         <button
@@ -534,7 +536,7 @@ export default function McpView({ scope, projectPath, refreshKey, onRefresh }) {
                     server.scope === 'global' ? 'var(--tag-blue)' : 'var(--tag-green)',
                     server.scope === 'global' ? 'var(--tag-blue-text)' : 'var(--tag-green-text)'
                   )}>
-                    {server.scope}
+                    {server.sourceLabel || server.scope}
                   </span>
                   <span style={styles.tag(
                     server.type === 'sse' ? 'var(--tag-orange)' : 'var(--tag-blue)',
@@ -543,20 +545,22 @@ export default function McpView({ scope, projectPath, refreshKey, onRefresh }) {
                     {server.type}
                   </span>
                 </div>
-                <div style={styles.actions}>
-                  <button
-                    style={styles.actionBtn('edit')}
-                    onClick={e => { e.stopPropagation(); setEditing({ item: server }); }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    style={styles.actionBtn('delete')}
-                    onClick={e => { e.stopPropagation(); handleDelete(server); }}
-                  >
-                    Delete
-                  </button>
-                </div>
+                {server.editable !== false && (
+                  <div style={styles.actions}>
+                    <button
+                      style={styles.actionBtn('edit')}
+                      onClick={e => { e.stopPropagation(); setEditing({ item: server }); }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      style={styles.actionBtn('delete')}
+                      onClick={e => { e.stopPropagation(); handleDelete(server); }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
                 <span style={styles.expandIcon(expanded[server.id])}>▼</span>
               </div>
 

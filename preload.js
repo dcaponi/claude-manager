@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('api', {
   disablePlugin: (pluginKey) => ipcRenderer.invoke('plugins:disable', pluginKey),
   uninstallPlugin: (pluginKey) => ipcRenderer.invoke('plugins:uninstall', pluginKey),
   scaffoldPlugin: (name, meta, skills, agents) => ipcRenderer.invoke('plugins:scaffold', name, meta, skills, agents),
+  createLocalPlugin: (name, description, skills, agents) => ipcRenderer.invoke('plugins:createLocal', name, description, skills, agents),
   addPluginToMarketplace: (mpName, pluginName, tempDir) => ipcRenderer.invoke('plugins:addToMarketplace', mpName, pluginName, tempDir),
   publishPlugin: (mpName, message) => ipcRenderer.invoke('plugins:publish', mpName, message),
 

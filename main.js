@@ -353,27 +353,25 @@ function listAllPlugins(projectPath) {
     } catch (e) {}
   }
 
-  if (localSkills.length > 0 || localAgents.length > 0) {
-    results.push({
-      id: '__local__',
-      key: '__local__',
-      name: 'Local',
-      description: 'Standalone local skills and agents not part of any plugin',
-      version: null,
-      author: null,
-      marketplace: null,
-      status: 'local',
-      enabled: true,
-      editable: true,
-      scope: 'local',
-      installPath: null,
-      skills: localSkills,
-      agents: localAgents,
-      hooks: null,
-      mcpServers: {},
-      meta: {},
-    });
-  }
+  results.push({
+    id: '__local__',
+    key: '__local__',
+    name: 'Local',
+    description: 'Standalone local skills and agents not part of any plugin',
+    version: null,
+    author: null,
+    marketplace: null,
+    status: 'local',
+    enabled: true,
+    editable: true,
+    scope: 'local',
+    installPath: null,
+    skills: localSkills,
+    agents: localAgents,
+    hooks: null,
+    mcpServers: {},
+    meta: {},
+  });
 
   return results;
 }
@@ -1085,6 +1083,62 @@ function chatWithClaude(message, projectPath, customClaudePath) {
 
 // ── IPC Handlers ──
 
+function createLocalPlugin(name, description, skills, agents) {
+  // Create plugin in a "local" cache directory
+  const pluginDir = path.join(PLUGINS_CACHE_DIR, 'local', name, 'latest');
+  if (fs.existsSync(pluginDir)) fs.rmSync(pluginDir, { recursive: true });
+  ensureDir(pluginDir);
+  ensureDir(path.join(pluginDir, '.claude-plugin'));
+
+  // Write plugin.json
+  const pluginJson = { name, description: description || '', version: '1.0.0' };
+  fs.writeFileSync(path.join(pluginDir, '.claude-plugin', 'plugin.json'), JSON.stringify(pluginJson, null, 2), 'utf-8');
+
+  // Write skills
+  if (skills && skills.length > 0) {
+    const skillsDir = path.join(pluginDir, 'skills');
+    ensureDir(skillsDir);
+    for (const skill of skills) {
+      const skillDir = path.join(skillsDir, skill.id);
+      ensureDir(skillDir);
+      const content = buildFrontmatter(skill.meta || {}, skill.body || '');
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), content, 'utf-8');
+    }
+  }
+
+  // Write agents
+  if (agents && agents.length > 0) {
+    const agentsDir = path.join(pluginDir, 'agents');
+    ensureDir(agentsDir);
+    for (const agent of agents) {
+      const content = buildFrontmatter(agent.meta || {}, agent.body || '');
+      fs.writeFileSync(path.join(agentsDir, `${agent.id}.md`), content, 'utf-8');
+    }
+  }
+
+  // Register in installed_plugins.json
+  let installedData = { version: 2, plugins: {} };
+  if (fs.existsSync(INSTALLED_PLUGINS_PATH)) {
+    try { installedData = JSON.parse(fs.readFileSync(INSTALLED_PLUGINS_PATH, 'utf-8')); } catch (e) {}
+  }
+  if (!installedData.plugins) installedData.plugins = {};
+
+  const pluginKey = `${name}@local`;
+  installedData.plugins[pluginKey] = [{
+    scope: 'user',
+    installPath: pluginDir,
+    version: 'latest',
+    installedAt: new Date().toISOString(),
+    lastUpdated: new Date().toISOString(),
+  }];
+  fs.writeFileSync(INSTALLED_PLUGINS_PATH, JSON.stringify(installedData, null, 2), 'utf-8');
+
+  // Enable it
+  enablePlugin(pluginKey);
+
+  return { ok: true, pluginKey, installPath: pluginDir };
+}
+
 function registerIPC() {
   // Plugins (unified)
   ipcMain.handle('plugins:listAll', (_, projectPath) => listAllPlugins(projectPath));
@@ -1096,6 +1150,10 @@ function registerIPC() {
   ipcMain.handle('plugins:disable', (_, pluginKey) => disablePlugin(pluginKey));
   ipcMain.handle('plugins:uninstall', (_, pluginKey) => uninstallPlugin(pluginKey));
   ipcMain.handle('plugins:scaffold', (_, name, meta, skills, agents) => scaffoldPlugin(name, meta, skills, agents));
+  ipcMain.handle('plugins:createLocal', (_, name, description, skills, agents) => {
+    try { return createLocalPlugin(name, description, skills, agents); }
+    catch (e) { return { ok: false, error: e.message }; }
+  });
   ipcMain.handle('plugins:addToMarketplace', (_, mpName, pluginName, tempDir) => addPluginToMarketplace(mpName, pluginName, tempDir));
   ipcMain.handle('plugins:publish', async (_, mpName, message) => {
     try { return await publishToMarketplace(mpName, message); }

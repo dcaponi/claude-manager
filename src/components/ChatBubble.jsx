@@ -214,6 +214,12 @@ Or for SSE:
 {"action":"create","type":"mcp","id":"server-name","config":{"type":"sse","url":"https://example.com/sse","env":{}}}
 \`\`\`
 
+For plugins (bundles of skills and/or agents):
+\`\`\`json
+{"action":"create","type":"plugin","id":"lowercase-hyphenated","description":"What this plugin does","skills":[{"id":"skill-id","meta":{"name":"Skill Name","description":"What it does"},"body":"Skill prompt content"}],"agents":[{"id":"agent-id","meta":{"name":"Agent Name","description":"What it does","tools":"Read, Grep, Glob, Bash","model":"sonnet"},"body":"Agent system prompt"}]}
+\`\`\`
+The skills and agents arrays can each be empty if not needed. A plugin must have at least one skill or agent.
+
 Rules:
 - Always check the plugin index before creating. Recommend existing plugins first.
 - Always include the JSON block when creating. Never just show markdown for the user to copy.
@@ -224,6 +230,9 @@ Rules:
 - When creating a skill that needs an MCP server, create BOTH: first the MCP server config, then the skill. Use TWO separate json blocks.
 - For the skill's "mcp-servers" meta field, list the MCP server names comma-separated.
 - If the user mentions a specific API (like Censys, GitHub, Stripe), look up the common MCP server package name for it.
+- When the user says "make a plugin" or "create a plugin", use the plugin creation format. This creates a real plugin that appears in the Plugins list with its own namespace.
+- When the user says "make a skill" without mentioning a plugin, create a standalone skill (it will appear under the "Local" virtual plugin).
+- A plugin is the right choice when the user wants to group related skills/agents together or share them.
 
 [FORMATTING]
 Your responses are displayed in a plain-text chat bubble with NO markdown rendering.
@@ -234,36 +243,37 @@ Your responses are displayed in a plain-text chat bubble with NO markdown render
 export default function ChatBubble({ projectPath, onRefresh, currentView }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([
-    { role: 'bot', text: 'Hi! I can help you build and understand Claude Code components. Try:\n\nAsk anything:\n- "What is a plugin?"\n- "What installed plugins do I have?"\n- "What\'s the difference between a skill and an agent?"\n\nOr create directly:\n- "Make a skill that deploys to staging"\n- "Create an agent that reviews PRs for security"\n\nI\'ll check your installed plugins first and recommend existing ones where possible.' },
+    { role: 'bot', text: 'Hi! I can help you build and understand Claude Code components. Try:\n\nAsk anything:\n- "What is a plugin?"\n- "What installed plugins do I have?"\n- "What\'s the difference between a skill and an agent?"\n\nOr create directly:\n- "Make a skill that deploys to staging"\n- "Create an agent that reviews PRs for security"\n- "Make a plugin with deployment tools"\n\nI\'ll check your installed plugins first and recommend existing ones where possible.' },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [pluginIndex, setPluginIndex] = useState('');
   const messagesRef = useRef(null);
 
-  useEffect(() => {
-    const buildIndex = async () => {
-      try {
-        const plugins = await window.api.listAllPlugins(projectPath);
-        if (!plugins || plugins.length === 0) {
-          setPluginIndex('No plugins installed.');
-          return;
-        }
-        const lines = plugins.map(p => {
-          const skills = (p.skills || []).map(s => s.name || s.id).join(', ');
-          const agents = (p.agents || []).map(a => a.name || a.id).join(', ');
-          const installed = p.status === 'installed' || p.installed ? 'installed' : 'available';
-          let line = `- ${p.name || p.id} (${installed})`;
-          if (skills) line += ` — skills: ${skills}`;
-          if (agents) line += ` — agents: ${agents}`;
-          return line;
-        });
-        setPluginIndex(lines.join('\n'));
-      } catch (e) {
-        setPluginIndex('');
+  const buildPluginIndex = async () => {
+    try {
+      const plugins = await window.api.listAllPlugins(projectPath);
+      if (!plugins || plugins.length === 0) {
+        setPluginIndex('No plugins installed.');
+        return;
       }
-    };
-    buildIndex();
+      const lines = plugins.map(p => {
+        const skills = (p.skills || []).map(s => s.name || s.id).join(', ');
+        const agents = (p.agents || []).map(a => a.name || a.id).join(', ');
+        const installed = p.status === 'installed' || p.installed ? 'installed' : 'available';
+        let line = `- ${p.name || p.id} (${installed})`;
+        if (skills) line += ` — skills: ${skills}`;
+        if (agents) line += ` — agents: ${agents}`;
+        return line;
+      });
+      setPluginIndex(lines.join('\n'));
+    } catch (e) {
+      setPluginIndex('');
+    }
+  };
+
+  useEffect(() => {
+    buildPluginIndex();
   }, [projectPath]);
 
   useEffect(() => {
@@ -291,6 +301,19 @@ export default function ChatBubble({ projectPath, onRefresh, currentView }) {
         } else if (data.type === 'mcp' && data.config) {
           await window.api.saveMcp('global', projectPath, data.id, data.config);
           created.push(data);
+        } else if (data.type === 'plugin') {
+          const skills = (data.skills || []).map(s => ({
+            id: s.id,
+            meta: s.meta || {},
+            body: s.body || '',
+          }));
+          const agents = (data.agents || []).map(a => ({
+            id: a.id,
+            meta: a.meta || {},
+            body: a.body || '',
+          }));
+          const result = await window.api.createLocalPlugin(data.id, data.description || '', skills, agents);
+          if (result.ok !== false) created.push(data);
         }
       } catch (e) {
         console.error('Failed to parse/create from chat:', e);
@@ -298,7 +321,6 @@ export default function ChatBubble({ projectPath, onRefresh, currentView }) {
     }
 
     if (created.length > 0) {
-      onRefresh();
       return created;
     }
     return null;
@@ -332,16 +354,18 @@ export default function ChatBubble({ projectPath, onRefresh, currentView }) {
         const created = await parseAndCreate(result.response);
 
         if (created) {
-          const labels = { skill: 'Skill', agent: 'Agent', mcp: 'MCP Server' };
+          const labels = { skill: 'Skill', agent: 'Agent', mcp: 'MCP Server', plugin: 'Plugin' };
           const summary = created.map(c => {
             const label = labels[c.type] || c.type;
-            const name = c.meta?.name || c.id;
+            const name = c.meta?.name || c.description || c.id;
             return `${label} "${name}"`;
           }).join(', ');
           setMessages(prev => [...prev,
             { role: 'bot', text: textWithoutJson || `Creating components...` },
             { role: 'bot', text: `Created ${summary} in global scope.` },
           ]);
+          onRefresh();
+          buildPluginIndex();
         } else {
           setMessages(prev => [...prev, { role: 'bot', text: result.response }]);
         }

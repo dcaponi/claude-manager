@@ -257,15 +257,21 @@ export default function ChatBubble({ projectPath, onRefresh, currentView }) {
         setPluginIndex('No plugins installed.');
         return;
       }
-      const lines = plugins.map(p => {
+      // Only include installed/local plugins with detail; available as names only
+      const installed = plugins.filter(p => p.status === 'installed' || p.status === 'local');
+      const available = plugins.filter(p => p.status === 'available');
+      const lines = installed.map(p => {
         const skills = (p.skills || []).map(s => s.name || s.id).join(', ');
         const agents = (p.agents || []).map(a => a.name || a.id).join(', ');
-        const installed = p.status === 'installed' || p.installed ? 'installed' : 'available';
-        let line = `- ${p.name || p.id} (${installed})`;
+        let line = `- ${p.name || p.id} [installed]`;
         if (skills) line += ` — skills: ${skills}`;
         if (agents) line += ` — agents: ${agents}`;
         return line;
       });
+      // Compact list of available plugin names (no skill detail)
+      if (available.length > 0) {
+        lines.push(`\nAvailable to install (${available.length}): ${available.map(p => p.name || p.id).join(', ')}`);
+      }
       setPluginIndex(lines.join('\n'));
     } catch (e) {
       setPluginIndex('');

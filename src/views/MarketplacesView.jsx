@@ -349,7 +349,7 @@ export default function MarketplacesView({ refreshKey, onRefresh }) {
                   <div style={styles.icon}>🏪</div>
                   <div style={{ minWidth: 0 }}>
                     <div style={styles.name}>{marketplace.name}</div>
-                    <div style={styles.source}>{marketplace.source || marketplace.repo || ''}</div>
+                    <div style={styles.source}>{marketplace.source?.repo || marketplace.source?.url || marketplace.installLocation || ''}</div>
                   </div>
                 </div>
 

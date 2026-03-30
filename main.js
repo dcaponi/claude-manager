@@ -986,80 +986,70 @@ function chatWithClaude(message, projectPath, customClaudePath) {
 // ── IPC Handlers ──
 
 function registerIPC() {
-  // Skills
-  ipcMain.handle('skills:list', (_, scope, projectPath) => listSkills(scope, projectPath));
-  ipcMain.handle('skills:get', (_, scope, projectPath, id) => getSkill(scope, projectPath, id));
+  // Plugins (unified)
+  ipcMain.handle('plugins:listAll', (_, projectPath) => listAllPlugins(projectPath));
+  ipcMain.handle('plugins:enable', (_, pluginKey) => enablePlugin(pluginKey));
+  ipcMain.handle('plugins:disable', (_, pluginKey) => disablePlugin(pluginKey));
+  ipcMain.handle('plugins:uninstall', (_, pluginKey) => uninstallPlugin(pluginKey));
+  ipcMain.handle('plugins:scaffold', (_, name, meta, skills, agents) => scaffoldPlugin(name, meta, skills, agents));
+  ipcMain.handle('plugins:addToMarketplace', (_, mpName, pluginName, tempDir) => addPluginToMarketplace(mpName, pluginName, tempDir));
+  ipcMain.handle('plugins:publish', async (_, mpName, message) => {
+    try { return await publishToMarketplace(mpName, message); }
+    catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  // Marketplaces
+  ipcMain.handle('marketplaces:list', () => listMarketplaces());
+  ipcMain.handle('marketplaces:create', (_, name, repo) => createMarketplace(name, repo));
+  ipcMain.handle('marketplaces:remove', (_, name) => removeMarketplace(name));
+  ipcMain.handle('marketplaces:setOwned', (_, name, owned) => setMarketplaceOwned(name, owned));
+  ipcMain.handle('marketplaces:update', async (_, name) => {
+    try { return await updateMarketplace(name); }
+    catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  // Skills (local CRUD)
   ipcMain.handle('skills:save', (_, scope, projectPath, id, meta, body) => saveSkill(scope, projectPath, id, meta, body));
   ipcMain.handle('skills:delete', (_, scope, projectPath, id) => deleteSkill(scope, projectPath, id));
 
-  // Agents
-  ipcMain.handle('agents:list', (_, scope, projectPath) => listAgents(scope, projectPath));
-  ipcMain.handle('agents:get', (_, scope, projectPath, id) => getAgent(scope, projectPath, id));
+  // Agents (local CRUD)
   ipcMain.handle('agents:save', (_, scope, projectPath, id, meta, body) => saveAgent(scope, projectPath, id, meta, body));
   ipcMain.handle('agents:delete', (_, scope, projectPath, id) => deleteAgent(scope, projectPath, id));
 
-  // Plugins
-  ipcMain.handle('plugins:list', (_, projectPath) => listPlugins(projectPath));
-  ipcMain.handle('plugins:listAll', (_, projectPath) => listAllPlugins(projectPath));
-  ipcMain.handle('mcp:listAll', (_, projectPath) => listAllMcpServers(projectPath));
-
   // MCP Servers
-  ipcMain.handle('mcp:list', (_, scope, projectPath) => listMcpServers(scope, projectPath));
+  ipcMain.handle('mcp:listAll', (_, projectPath) => listAllMcpServers(projectPath));
   ipcMain.handle('mcp:save', (_, scope, projectPath, id, config) => saveMcpServer(scope, projectPath, id, config));
   ipcMain.handle('mcp:delete', (_, scope, projectPath, id) => deleteMcpServer(scope, projectPath, id));
 
-  // Settings / Agent Teams
+  // Settings
   ipcMain.handle('settings:get', (_, projectPath) => getSettings(projectPath));
   ipcMain.handle('settings:save', (_, scope, projectPath, settings) => saveSettings(scope, projectPath, settings));
 
   // Chat
   ipcMain.handle('chat:send', async (_, message, projectPath) => {
-    try {
-      return { ok: true, response: await chatWithClaude(message, projectPath) };
-    } catch (e) {
-      return { ok: false, error: e.message };
-    }
+    try { return { ok: true, response: await chatWithClaude(message, projectPath) }; }
+    catch (e) { return { ok: false, error: e.message }; }
   });
 
   // Claude CLI connection
-  ipcMain.handle('claude:getPath', () => {
-    const config = getAppConfig();
-    return config.claudePath || '';
-  });
-
+  ipcMain.handle('claude:getPath', () => { const config = getAppConfig(); return config.claudePath || ''; });
   ipcMain.handle('claude:setPath', (_, newPath) => {
     const config = getAppConfig();
-    if (newPath) {
-      config.claudePath = newPath;
-    } else {
-      delete config.claudePath;
-    }
-    saveAppConfig(config);
-    return true;
+    if (newPath) config.claudePath = newPath; else delete config.claudePath;
+    saveAppConfig(config); return true;
   });
-
   ipcMain.handle('claude:test', async (_, customPath) => {
     return new Promise((resolve) => {
       const bin = customPath || resolveClaudePath();
-      const proc = spawn(bin, ['--version'], {
-        cwd: os.homedir(),
-        env: { ...process.env },
-        timeout: 10000,
-      });
-      let stdout = '';
-      let stderr = '';
+      const proc = spawn(bin, ['--version'], { cwd: os.homedir(), env: { ...process.env }, timeout: 10000 });
+      let stdout = '', stderr = '';
       proc.stdout.on('data', d => { stdout += d.toString(); });
       proc.stderr.on('data', d => { stderr += d.toString(); });
       proc.on('close', code => {
-        if (code === 0) {
-          resolve({ ok: true, version: stdout.trim(), path: bin });
-        } else {
-          resolve({ ok: false, error: stderr.trim() || `Exit code ${code}` });
-        }
+        if (code === 0) resolve({ ok: true, version: stdout.trim(), path: bin });
+        else resolve({ ok: false, error: stderr.trim() || `Exit code ${code}` });
       });
-      proc.on('error', (e) => {
-        resolve({ ok: false, error: `Could not find Claude CLI at "${bin}". ${e.message}` });
-      });
+      proc.on('error', (e) => { resolve({ ok: false, error: `Could not find Claude CLI at "${bin}". ${e.message}` }); });
     });
   });
 

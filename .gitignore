@@ -5,3 +5,4 @@ release/
 *.exe
 *.zip
 .DS_Store
+test-results/

@@ -465,7 +465,7 @@ export default function McpView({ projectPath, refreshKey, onRefresh }) {
   };
 
   const handleSave = async (id, config) => {
-    const scope = editing?.item?.scope || 'global';
+    const scope = editing?.item?.source === 'project' ? 'project' : 'global';
     await window.api.saveMcp(scope, projectPath, id, config);
     setEditing(null);
     loadServers();
@@ -474,7 +474,7 @@ export default function McpView({ projectPath, refreshKey, onRefresh }) {
 
   const handleDelete = async (server) => {
     if (!confirm(`Remove MCP server "${server.id}"?`)) return;
-    const scope = server.scope || 'global';
+    const scope = server.source === 'project' ? 'project' : 'global';
     await window.api.deleteMcp(scope, projectPath, server.id);
     loadServers();
     onRefresh();

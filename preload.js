@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   // Plugins (unified)
   listAllPlugins: (projectPath) => ipcRenderer.invoke('plugins:listAll', projectPath),
+  installPlugin: (pluginKey, marketplace) => ipcRenderer.invoke('plugins:install', pluginKey, marketplace),
   enablePlugin: (pluginKey) => ipcRenderer.invoke('plugins:enable', pluginKey),
   disablePlugin: (pluginKey) => ipcRenderer.invoke('plugins:disable', pluginKey),
   uninstallPlugin: (pluginKey) => ipcRenderer.invoke('plugins:uninstall', pluginKey),

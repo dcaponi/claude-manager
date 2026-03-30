@@ -565,6 +565,62 @@ function uninstallPlugin(pluginKey) {
   return true;
 }
 
+function installPlugin(pluginKey, marketplaceName) {
+  const known = readKnownMarketplaces();
+  const mpInfo = known[marketplaceName];
+  if (!mpInfo) throw new Error(`Unknown marketplace: ${marketplaceName}`);
+
+  const mpPath = mpInfo.installLocation || path.join(MARKETPLACES_DIR, marketplaceName);
+  const catalog = readMarketplaceCatalog(mpPath);
+  if (!catalog) throw new Error(`Cannot read marketplace catalog`);
+
+  const atIdx = pluginKey.lastIndexOf('@');
+  const pluginName = atIdx > -1 ? pluginKey.slice(0, atIdx) : pluginKey;
+
+  const pluginEntry = catalog.plugins.find(p => p.name === pluginName);
+  if (!pluginEntry) throw new Error(`Plugin ${pluginName} not found in marketplace ${marketplaceName}`);
+
+  // Determine source directory
+  let sourceDir;
+  if (typeof pluginEntry.source === 'string' && pluginEntry.source.startsWith('./')) {
+    sourceDir = path.join(mpPath, pluginEntry.source);
+  } else {
+    throw new Error(`Cannot install plugin with external source. Use Claude Code CLI: /plugin install ${pluginKey}`);
+  }
+
+  if (!fs.existsSync(sourceDir)) throw new Error(`Plugin source directory not found: ${sourceDir}`);
+
+  // Copy to cache
+  const version = pluginEntry.version || 'latest';
+  const cachePath = path.join(PLUGINS_CACHE_DIR, marketplaceName, pluginName, version);
+  ensureDir(path.dirname(cachePath));
+  if (fs.existsSync(cachePath)) fs.rmSync(cachePath, { recursive: true });
+  fs.cpSync(sourceDir, cachePath, { recursive: true });
+
+  // Update installed_plugins.json
+  let installedData = { version: 2, plugins: {} };
+  if (fs.existsSync(INSTALLED_PLUGINS_PATH)) {
+    try { installedData = JSON.parse(fs.readFileSync(INSTALLED_PLUGINS_PATH, 'utf-8')); } catch (e) {}
+  }
+  if (!installedData.plugins) installedData.plugins = {};
+
+  installedData.plugins[pluginKey] = [{
+    scope: 'user',
+    installPath: cachePath,
+    version: version,
+    installedAt: new Date().toISOString(),
+    lastUpdated: new Date().toISOString(),
+  }];
+
+  ensureDir(path.dirname(INSTALLED_PLUGINS_PATH));
+  fs.writeFileSync(INSTALLED_PLUGINS_PATH, JSON.stringify(installedData, null, 2), 'utf-8');
+
+  // Enable it
+  enablePlugin(pluginKey);
+
+  return { ok: true, installPath: cachePath };
+}
+
 // ── Package & Publish ──
 
 function scaffoldPlugin(name, meta, selectedSkills, selectedAgents) {
@@ -1032,6 +1088,10 @@ function chatWithClaude(message, projectPath, customClaudePath) {
 function registerIPC() {
   // Plugins (unified)
   ipcMain.handle('plugins:listAll', (_, projectPath) => listAllPlugins(projectPath));
+  ipcMain.handle('plugins:install', async (_, pluginKey, marketplace) => {
+    try { return installPlugin(pluginKey, marketplace); }
+    catch (e) { return { ok: false, error: e.message }; }
+  });
   ipcMain.handle('plugins:enable', (_, pluginKey) => enablePlugin(pluginKey));
   ipcMain.handle('plugins:disable', (_, pluginKey) => disablePlugin(pluginKey));
   ipcMain.handle('plugins:uninstall', (_, pluginKey) => uninstallPlugin(pluginKey));

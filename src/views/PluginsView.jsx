@@ -146,8 +146,8 @@ const styles = {
     border: '1px solid',
     transition: 'all 0.15s',
     background: 'transparent',
-    borderColor: variant === 'danger' ? 'var(--danger)' : variant === 'primary' ? 'var(--accent)' : 'var(--border)',
-    color: variant === 'danger' ? 'var(--danger)' : variant === 'primary' ? 'var(--accent)' : 'var(--text-secondary)',
+    borderColor: variant === 'danger' ? 'var(--danger)' : variant === 'primary' ? 'var(--accent)' : variant === 'success' ? 'var(--tag-green-text, #2a9d6e)' : 'var(--border)',
+    color: variant === 'danger' ? 'var(--danger)' : variant === 'primary' ? 'var(--accent)' : variant === 'success' ? 'var(--tag-green-text, #2a9d6e)' : 'var(--text-secondary)',
   }),
   expandIcon: (expanded) => ({
     fontSize: 10,
@@ -379,6 +379,21 @@ function PluginCard({ plugin, projectPath, onRefresh }) {
     onRefresh();
   };
 
+  const handleInstall = async (e) => {
+    e.stopPropagation();
+    setActing(true);
+    try {
+      const result = await window.api.installPlugin(plugin.key, plugin.marketplace);
+      if (result.ok === false) {
+        alert(`Install failed: ${result.error}`);
+      }
+    } catch (err) {
+      alert(`Install failed: ${err.message}`);
+    }
+    setActing(false);
+    onRefresh();
+  };
+
   const statusColor = isInstalled
     ? (plugin.enabled ? ['var(--tag-green)', 'var(--tag-green-text)'] : ['var(--tag-orange)', 'var(--tag-orange-text)'])
     : ['var(--bg-tertiary)', 'var(--text-muted)'];
@@ -402,14 +417,22 @@ function PluginCard({ plugin, projectPath, onRefresh }) {
           </div>
 
           <div style={styles.tags}>
-            {counts.skills > 0 && (
-              <span style={styles.countBadge}>⚡ {counts.skills}</span>
-            )}
-            {counts.agents > 0 && (
-              <span style={styles.countBadge}>🤖 {counts.agents}</span>
-            )}
-            {counts.lsp > 0 && (
-              <span style={styles.countBadge}>LSP {counts.lsp}</span>
+            {[
+              counts.skills > 0 && `${counts.skills} skill${counts.skills !== 1 ? 's' : ''}`,
+              counts.agents > 0 && `${counts.agents} agent${counts.agents !== 1 ? 's' : ''}`,
+              counts.hooks > 0 && `${counts.hooks} hook${counts.hooks !== 1 ? 's' : ''}`,
+              counts.mcp > 0 && `${counts.mcp} MCP`,
+              counts.lsp > 0 && `${counts.lsp} LSP`,
+            ].filter(Boolean).length > 0 && (
+              <span style={styles.countBadge}>
+                {[
+                  counts.skills > 0 && `${counts.skills} skill${counts.skills !== 1 ? 's' : ''}`,
+                  counts.agents > 0 && `${counts.agents} agent${counts.agents !== 1 ? 's' : ''}`,
+                  counts.hooks > 0 && `${counts.hooks} hook${counts.hooks !== 1 ? 's' : ''}`,
+                  counts.mcp > 0 && `${counts.mcp} MCP`,
+                  counts.lsp > 0 && `${counts.lsp} LSP`,
+                ].filter(Boolean).join(' · ')}
+              </span>
             )}
             {plugin.marketplace && (
               <span style={styles.tag('var(--tag-blue)', 'var(--tag-blue-text)')}>
@@ -427,9 +450,18 @@ function PluginCard({ plugin, projectPath, onRefresh }) {
           <span style={styles.expandIcon(expanded)}>▼</span>
         </div>
 
-        {isInstalled && (
+        {(isInstalled || plugin.status === 'available') && (
           <div style={styles.cardActions}>
-            {plugin.enabled ? (
+            {plugin.status === 'available' && (
+              <button
+                style={styles.actionBtn('success')}
+                disabled={acting}
+                onClick={handleInstall}
+              >
+                Install
+              </button>
+            )}
+            {isInstalled && plugin.enabled ? (
               <button
                 style={styles.actionBtn('secondary')}
                 disabled={acting}
@@ -437,7 +469,7 @@ function PluginCard({ plugin, projectPath, onRefresh }) {
               >
                 Disable
               </button>
-            ) : (
+            ) : isInstalled ? (
               <button
                 style={styles.actionBtn('primary')}
                 disabled={acting}
@@ -445,14 +477,16 @@ function PluginCard({ plugin, projectPath, onRefresh }) {
               >
                 Enable
               </button>
+            ) : null}
+            {isInstalled && (
+              <button
+                style={styles.actionBtn('danger')}
+                disabled={acting}
+                onClick={handleUninstall}
+              >
+                Uninstall
+              </button>
             )}
-            <button
-              style={styles.actionBtn('danger')}
-              disabled={acting}
-              onClick={handleUninstall}
-            >
-              Uninstall
-            </button>
           </div>
         )}
 

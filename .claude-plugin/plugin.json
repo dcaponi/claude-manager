@@ -2,15 +2,8 @@
   "name": "claude-manager",
   "version": "1.0.0",
   "description": "Desktop UI for managing Claude Code skills, agents, plugins, and agent teams",
-  "author": "dcaponi",
-  "license": "MIT",
-  "homepage": "https://github.com/dcaponi/claude-manager",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/dcaponi/claude-manager.git"
-  },
-  "skills": [
-    "skill/claude-manager"
-  ],
-  "minClaudeCodeVersion": "1.0.33"
+  "author": {
+    "name": "dcaponi",
+    "email": "dcaponi@users.noreply.github.com"
+  }
 }

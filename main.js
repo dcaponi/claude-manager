@@ -9,6 +9,10 @@ const GLOBAL_SKILLS_DIR = path.join(GLOBAL_CLAUDE_DIR, 'skills');
 const GLOBAL_AGENTS_DIR = path.join(GLOBAL_CLAUDE_DIR, 'agents');
 const GLOBAL_SETTINGS_PATH = path.join(GLOBAL_CLAUDE_DIR, 'settings.json');
 const APP_CONFIG_PATH = path.join(GLOBAL_CLAUDE_DIR, 'claude-manager-config.json');
+const INSTALLED_PLUGINS_PATH = path.join(GLOBAL_CLAUDE_DIR, 'plugins', 'installed_plugins.json');
+const KNOWN_MARKETPLACES_PATH = path.join(GLOBAL_CLAUDE_DIR, 'plugins', 'known_marketplaces.json');
+const MARKETPLACES_DIR = path.join(GLOBAL_CLAUDE_DIR, 'plugins', 'marketplaces');
+const PLUGINS_CACHE_DIR = path.join(GLOBAL_CLAUDE_DIR, 'plugins', 'cache');
 
 function getAppConfig() {
   if (fs.existsSync(APP_CONFIG_PATH)) {
@@ -65,6 +69,317 @@ function buildFrontmatter(meta, body) {
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
     .map(([k, v]) => `${k}: ${v}`);
   return `---\n${lines.join('\n')}\n---\n${body}`;
+}
+
+// ── Plugin Discovery ──
+
+function readInstalledPlugins() {
+  if (!fs.existsSync(INSTALLED_PLUGINS_PATH)) return {};
+  try {
+    const data = JSON.parse(fs.readFileSync(INSTALLED_PLUGINS_PATH, 'utf-8'));
+    return data.plugins || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function readEnabledPlugins() {
+  if (!fs.existsSync(GLOBAL_SETTINGS_PATH)) return {};
+  try {
+    const data = JSON.parse(fs.readFileSync(GLOBAL_SETTINGS_PATH, 'utf-8'));
+    return data.enabledPlugins || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function readKnownMarketplaces() {
+  if (!fs.existsSync(KNOWN_MARKETPLACES_PATH)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(KNOWN_MARKETPLACES_PATH, 'utf-8'));
+  } catch (e) {
+    return {};
+  }
+}
+
+function readMarketplaceCatalog(marketplacePath) {
+  const catalogPath = path.join(marketplacePath, '.claude-plugin', 'marketplace.json');
+  if (!fs.existsSync(catalogPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(catalogPath, 'utf-8'));
+  } catch (e) {
+    return null;
+  }
+}
+
+function scanPluginContents(pluginPath) {
+  if (!fs.existsSync(pluginPath)) {
+    return { skills: [], agents: [], hooks: null, mcpServers: {}, meta: {} };
+  }
+
+  // Read plugin metadata
+  let meta = {};
+  const pluginJsonPath = path.join(pluginPath, '.claude-plugin', 'plugin.json');
+  if (fs.existsSync(pluginJsonPath)) {
+    try { meta = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf-8')); } catch (e) {}
+  }
+
+  // Scan skills: skills/*/SKILL.md (new format) and commands/*.md (legacy)
+  const skills = [];
+  const skillsDir = path.join(pluginPath, 'skills');
+  if (fs.existsSync(skillsDir)) {
+    try {
+      for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const skillFile = path.join(skillsDir, entry.name, 'SKILL.md');
+        if (fs.existsSync(skillFile)) {
+          const { meta: sm, body } = parseFrontmatter(fs.readFileSync(skillFile, 'utf-8'));
+          skills.push({ id: entry.name, ...sm, body, filePath: skillFile });
+        }
+      }
+    } catch (e) {}
+  }
+  // Legacy: commands/*.md
+  const commandsDir = path.join(pluginPath, 'commands');
+  if (fs.existsSync(commandsDir)) {
+    try {
+      for (const f of fs.readdirSync(commandsDir).filter(n => n.endsWith('.md'))) {
+        const id = f.replace('.md', '');
+        if (skills.find(s => s.id === id)) continue; // skip if already found in skills/
+        const filePath = path.join(commandsDir, f);
+        const { meta: sm, body } = parseFrontmatter(fs.readFileSync(filePath, 'utf-8'));
+        skills.push({ id, ...sm, body, filePath, legacy: true });
+      }
+    } catch (e) {}
+  }
+
+  // Scan agents: agents/*.md
+  const agents = [];
+  const agentsDir = path.join(pluginPath, 'agents');
+  if (fs.existsSync(agentsDir)) {
+    try {
+      for (const f of fs.readdirSync(agentsDir).filter(n => n.endsWith('.md'))) {
+        const id = f.replace('.md', '');
+        const filePath = path.join(agentsDir, f);
+        const { meta: am, body } = parseFrontmatter(fs.readFileSync(filePath, 'utf-8'));
+        agents.push({ id, ...am, body, filePath });
+      }
+    } catch (e) {}
+  }
+
+  // Read hooks
+  let hooks = null;
+  const hooksFile = path.join(pluginPath, 'hooks', 'hooks.json');
+  if (fs.existsSync(hooksFile)) {
+    try { hooks = JSON.parse(fs.readFileSync(hooksFile, 'utf-8')); } catch (e) {}
+  }
+
+  // Read MCP servers from .mcp.json
+  let mcpServers = {};
+  const mcpFile = path.join(pluginPath, '.mcp.json');
+  if (fs.existsSync(mcpFile)) {
+    try { mcpServers = JSON.parse(fs.readFileSync(mcpFile, 'utf-8')); } catch (e) {}
+  }
+
+  return { skills, agents, hooks, mcpServers, meta };
+}
+
+function listAllPlugins(projectPath) {
+  const appConfig = getAppConfig();
+  const ownedMarketplaces = new Set(appConfig.ownedMarketplaces || []);
+
+  const installedPlugins = readInstalledPlugins();
+  const enabledPlugins = readEnabledPlugins();
+  const knownMarketplaces = readKnownMarketplaces();
+
+  const results = [];
+  const seenKeys = new Set();
+
+  // Process installed plugins
+  for (const [key, installations] of Object.entries(installedPlugins)) {
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+
+    // Parse key: "plugin-name@marketplace-name"
+    const atIdx = key.lastIndexOf('@');
+    const pluginName = atIdx > -1 ? key.slice(0, atIdx) : key;
+    const marketplace = atIdx > -1 ? key.slice(atIdx + 1) : null;
+
+    // Pick the most relevant installation (prefer user scope, then first)
+    const installList = Array.isArray(installations) ? installations : [installations];
+    const userInstall = installList.find(i => i.scope === 'user') || installList[0];
+    const installPath = userInstall ? userInstall.installPath : null;
+
+    const contents = installPath ? scanPluginContents(installPath) : { skills: [], agents: [], hooks: null, mcpServers: {}, meta: {} };
+
+    const isEnabled = enabledPlugins[key] !== undefined ? enabledPlugins[key] : true;
+    const isEditable = marketplace ? ownedMarketplaces.has(marketplace) : false;
+
+    results.push({
+      id: pluginName,
+      key,
+      name: contents.meta.name || pluginName,
+      description: contents.meta.description || '',
+      version: userInstall ? userInstall.version : null,
+      author: contents.meta.author || null,
+      marketplace,
+      status: 'installed',
+      enabled: isEnabled,
+      editable: isEditable,
+      scope: userInstall ? userInstall.scope : 'user',
+      installPath,
+      skills: contents.skills,
+      agents: contents.agents,
+      hooks: contents.hooks,
+      mcpServers: contents.mcpServers,
+      meta: contents.meta,
+    });
+  }
+
+  // Process marketplace catalogs for available-but-not-installed plugins
+  for (const [mpName, mpInfo] of Object.entries(knownMarketplaces)) {
+    const mpPath = mpInfo.installLocation;
+    const catalog = readMarketplaceCatalog(mpPath);
+    if (!catalog || !Array.isArray(catalog.plugins)) continue;
+
+    for (const plugin of catalog.plugins) {
+      const pluginId = plugin.name;
+      const pluginKey = `${pluginId}@${mpName}`;
+      if (seenKeys.has(pluginKey)) continue; // already in installed list
+      seenKeys.add(pluginKey);
+
+      const isEditable = ownedMarketplaces.has(mpName);
+
+      results.push({
+        id: pluginId,
+        key: pluginKey,
+        name: plugin.name,
+        description: plugin.description || '',
+        version: null,
+        author: plugin.author || null,
+        marketplace: mpName,
+        status: 'available',
+        enabled: false,
+        editable: isEditable,
+        scope: null,
+        installPath: null,
+        skills: [],
+        agents: [],
+        hooks: null,
+        mcpServers: {},
+        meta: plugin,
+      });
+    }
+  }
+
+  // Gather local standalone skills and agents under virtual "Local" plugin
+  const localSkillsDirs = [GLOBAL_SKILLS_DIR];
+  if (projectPath) localSkillsDirs.push(path.join(projectPath, '.claude', 'skills'));
+
+  const localAgentsDirs = [GLOBAL_AGENTS_DIR];
+  if (projectPath) localAgentsDirs.push(path.join(projectPath, '.claude', 'agents'));
+
+  const localSkills = [];
+  for (const dir of localSkillsDirs) {
+    if (!fs.existsSync(dir)) continue;
+    const scope = dir === GLOBAL_SKILLS_DIR ? 'global' : 'project';
+    try {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const skillFile = path.join(dir, entry.name, 'SKILL.md');
+        if (fs.existsSync(skillFile)) {
+          const { meta: sm, body } = parseFrontmatter(fs.readFileSync(skillFile, 'utf-8'));
+          localSkills.push({ id: entry.name, ...sm, body, scope, filePath: skillFile });
+        }
+      }
+    } catch (e) {}
+  }
+
+  const localAgents = [];
+  for (const dir of localAgentsDirs) {
+    if (!fs.existsSync(dir)) continue;
+    const scope = dir === GLOBAL_AGENTS_DIR ? 'global' : 'project';
+    try {
+      for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.md'))) {
+        const id = f.replace('.md', '');
+        const filePath = path.join(dir, f);
+        const { meta: am, body } = parseFrontmatter(fs.readFileSync(filePath, 'utf-8'));
+        localAgents.push({ id, ...am, body, scope, filePath });
+      }
+    } catch (e) {}
+  }
+
+  if (localSkills.length > 0 || localAgents.length > 0) {
+    results.push({
+      id: '__local__',
+      key: '__local__',
+      name: 'Local',
+      description: 'Standalone local skills and agents not part of any plugin',
+      version: null,
+      author: null,
+      marketplace: null,
+      status: 'local',
+      enabled: true,
+      editable: true,
+      scope: 'local',
+      installPath: null,
+      skills: localSkills,
+      agents: localAgents,
+      hooks: null,
+      mcpServers: {},
+      meta: {},
+    });
+  }
+
+  return results;
+}
+
+function listAllMcpServers(projectPath) {
+  const results = [];
+
+  // Helper to add servers from a config file
+  const addServersFromFile = (filePath, source, sourceLabel, editable) => {
+    if (!fs.existsSync(filePath)) return;
+    try {
+      const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      const servers = raw.mcpServers || raw;
+      if (typeof servers !== 'object') return;
+      for (const [id, cfg] of Object.entries(servers)) {
+        results.push({
+          id,
+          type: cfg.url ? 'sse' : 'stdio',
+          source,
+          sourceLabel,
+          editable,
+          filePath,
+          ...cfg,
+        });
+      }
+    } catch (e) {}
+  };
+
+  // Global .mcp.json
+  addServersFromFile(path.join(GLOBAL_CLAUDE_DIR, '.mcp.json'), 'global', 'Global', true);
+
+  // Project .mcp.json
+  if (projectPath) {
+    addServersFromFile(path.join(projectPath, '.mcp.json'), 'project', 'Project', true);
+  }
+
+  // Plugin-bundled .mcp.json files from installed plugins
+  const installedPlugins = readInstalledPlugins();
+  for (const [key, installations] of Object.entries(installedPlugins)) {
+    const installList = Array.isArray(installations) ? installations : [installations];
+    const userInstall = installList.find(i => i.scope === 'user') || installList[0];
+    if (!userInstall || !userInstall.installPath) continue;
+
+    const mcpFile = path.join(userInstall.installPath, '.mcp.json');
+    const atIdx = key.lastIndexOf('@');
+    const pluginName = atIdx > -1 ? key.slice(0, atIdx) : key;
+    addServersFromFile(mcpFile, 'plugin', `Plugin: ${pluginName}`, false);
+  }
+
+  return results;
 }
 
 // ── Skills ──
@@ -360,6 +675,8 @@ function registerIPC() {
 
   // Plugins
   ipcMain.handle('plugins:list', (_, projectPath) => listPlugins(projectPath));
+  ipcMain.handle('plugins:listAll', (_, projectPath) => listAllPlugins(projectPath));
+  ipcMain.handle('mcp:listAll', (_, projectPath) => listAllMcpServers(projectPath));
 
   // MCP Servers
   ipcMain.handle('mcp:list', (_, scope, projectPath) => listMcpServers(scope, projectPath));

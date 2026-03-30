@@ -181,7 +181,14 @@ function scanPluginContents(pluginPath) {
     try { mcpServers = JSON.parse(fs.readFileSync(mcpFile, 'utf-8')); } catch (e) {}
   }
 
-  return { skills, agents, hooks, mcpServers, meta };
+  // Scan LSP servers
+  let lspServers = {};
+  const lspFile = path.join(pluginPath, '.lsp.json');
+  if (fs.existsSync(lspFile)) {
+    try { lspServers = JSON.parse(fs.readFileSync(lspFile, 'utf-8')); } catch (e) {}
+  }
+
+  return { skills, agents, hooks, mcpServers, lspServers, meta };
 }
 
 function listAllPlugins(projectPath) {
@@ -210,7 +217,24 @@ function listAllPlugins(projectPath) {
     const userInstall = installList.find(i => i.scope === 'user') || installList[0];
     const installPath = userInstall ? userInstall.installPath : null;
 
-    const contents = installPath ? scanPluginContents(installPath) : { skills: [], agents: [], hooks: null, mcpServers: {}, meta: {} };
+    const contents = installPath ? scanPluginContents(installPath) : { skills: [], agents: [], hooks: null, mcpServers: {}, lspServers: {}, meta: {} };
+
+    // Merge marketplace-declared lspServers/mcpServers if available
+    if (marketplace && knownMarketplaces[marketplace]) {
+      const mpPath = knownMarketplaces[marketplace].installLocation;
+      const catalog = readMarketplaceCatalog(mpPath);
+      if (catalog && Array.isArray(catalog.plugins)) {
+        const mpPlugin = catalog.plugins.find(p => p.name === pluginName);
+        if (mpPlugin) {
+          if (mpPlugin.lspServers && typeof mpPlugin.lspServers === 'object') {
+            contents.lspServers = { ...contents.lspServers, ...mpPlugin.lspServers };
+          }
+          if (mpPlugin.mcpServers && typeof mpPlugin.mcpServers === 'object') {
+            contents.mcpServers = { ...contents.mcpServers, ...mpPlugin.mcpServers };
+          }
+        }
+      }
+    }
 
     const isEnabled = enabledPlugins[key] !== undefined ? enabledPlugins[key] : true;
     const isEditable = marketplace ? ownedMarketplaces.has(marketplace) : false;
@@ -232,6 +256,7 @@ function listAllPlugins(projectPath) {
       agents: contents.agents,
       hooks: contents.hooks,
       mcpServers: contents.mcpServers,
+      lspServers: contents.lspServers || {},
       meta: contents.meta,
     });
   }
@@ -248,6 +273,24 @@ function listAllPlugins(projectPath) {
       if (seenKeys.has(pluginKey)) continue; // already in installed list
       seenKeys.add(pluginKey);
 
+      // Try to scan plugin contents from marketplace directory
+      let contents = { skills: [], agents: [], hooks: null, mcpServers: {}, lspServers: {}, meta: {} };
+      const pluginSource = plugin.source;
+      if (typeof pluginSource === 'string' && pluginSource.startsWith('./')) {
+        const pluginDir = path.join(mpPath, pluginSource);
+        if (fs.existsSync(pluginDir)) {
+          contents = scanPluginContents(pluginDir);
+        }
+      }
+
+      // Merge marketplace-declared resources (these override/supplement scanned ones)
+      if (plugin.lspServers && typeof plugin.lspServers === 'object') {
+        contents.lspServers = { ...contents.lspServers, ...plugin.lspServers };
+      }
+      if (plugin.mcpServers && typeof plugin.mcpServers === 'object') {
+        contents.mcpServers = { ...contents.mcpServers, ...plugin.mcpServers };
+      }
+
       const isEditable = ownedMarketplaces.has(mpName);
 
       results.push({
@@ -255,7 +298,7 @@ function listAllPlugins(projectPath) {
         key: pluginKey,
         name: plugin.name,
         description: plugin.description || '',
-        version: null,
+        version: plugin.version || null,
         author: plugin.author || null,
         marketplace: mpName,
         status: 'available',
@@ -263,11 +306,12 @@ function listAllPlugins(projectPath) {
         editable: isEditable,
         scope: null,
         installPath: null,
-        skills: [],
-        agents: [],
-        hooks: null,
-        mcpServers: {},
-        meta: plugin,
+        skills: contents.skills,
+        agents: contents.agents,
+        hooks: contents.hooks,
+        mcpServers: contents.mcpServers,
+        lspServers: contents.lspServers || {},
+        meta: contents.meta || {},
       });
     }
   }

@@ -318,11 +318,16 @@ function PluginCard({ plugin, projectPath, onRefresh }) {
           }).flat())
     : [];
 
+  const lspEntries = plugin.lspServers
+    ? Object.entries(plugin.lspServers).map(([id, cfg]) => ({ id, ...cfg }))
+    : [];
+
   const counts = {
     skills: (plugin.skills || []).length,
     agents: (plugin.agents || []).length,
     mcp: mcpEntries.length,
     hooks: hooksEntries.length,
+    lsp: lspEntries.length,
   };
 
   const handleEnable = async (e) => {
@@ -403,6 +408,9 @@ function PluginCard({ plugin, projectPath, onRefresh }) {
             {counts.agents > 0 && (
               <span style={styles.countBadge}>🤖 {counts.agents}</span>
             )}
+            {counts.lsp > 0 && (
+              <span style={styles.countBadge}>LSP {counts.lsp}</span>
+            )}
             {plugin.marketplace && (
               <span style={styles.tag('var(--tag-blue)', 'var(--tag-blue-text)')}>
                 {plugin.marketplace}
@@ -451,13 +459,13 @@ function PluginCard({ plugin, projectPath, onRefresh }) {
         <div style={styles.expandedContent(expanded)}>
           <div style={styles.expandedInner}>
             <div style={styles.tabs}>
-              {['skills', 'agents', 'mcp', 'hooks'].map(tab => (
+              {['skills', 'agents', 'mcp', 'hooks', 'lsp'].map(tab => (
                 <button
                   key={tab}
                   style={styles.tab(activeTab === tab)}
                   onClick={e => { e.stopPropagation(); setActiveTab(tab); }}
                 >
-                  {tab === 'mcp' ? 'MCP Servers' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {tab === 'mcp' ? 'MCP Servers' : tab === 'lsp' ? 'LSP Servers' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                   {counts[tab] > 0 && ` (${counts[tab]})`}
                 </button>
               ))}
@@ -542,6 +550,26 @@ function PluginCard({ plugin, projectPath, onRefresh }) {
                     <div key={i} style={styles.itemRow}>
                       <div style={styles.itemName}>{String(hook.event || hook.type || 'Hook')}</div>
                       {hook.command && <div style={styles.itemDesc}>{String(hook.command)}</div>}
+                    </div>
+                  ))
+                )
+              )}
+
+              {activeTab === 'lsp' && (
+                lspEntries.length === 0 ? (
+                  <div style={styles.emptyTab}>No LSP servers in this plugin</div>
+                ) : (
+                  lspEntries.map((server) => (
+                    <div key={server.id} style={styles.itemRow}>
+                      <div style={styles.itemName}>{server.id}</div>
+                      {server.command && (
+                        <div style={styles.itemDesc}>{server.command} {(server.args || []).join(' ')}</div>
+                      )}
+                      {server.extensionToLanguage && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                          Extensions: {Object.keys(server.extensionToLanguage).join(', ')}
+                        </div>
+                      )}
                     </div>
                   ))
                 )
